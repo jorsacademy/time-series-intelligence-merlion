@@ -1,19 +1,23 @@
 # Time Series Intelligence with Merlion
 
-A reproducible project demonstrating **forecasting**, **anomaly detection**, and **multi-model benchmarking** with Salesforce's [Merlion](https://github.com/salesforce/Merlion) time-series library.
+A reproducible project demonstrating **forecasting**, **anomaly detection**, **multi-model benchmarking**, and **production-like rolling backtesting** with Salesforce's [Merlion](https://github.com/salesforce/Merlion) time-series library.
 
-The repository now contains two workflows:
+The repository contains three workflows:
 
-1. a small synthetic end-to-end demo, and
-2. a benchmark using **real US macroeconomic data** packaged with `statsmodels`.
+1. a small synthetic end-to-end demo,
+2. a multi-model benchmark using real US macroeconomic data packaged with `statsmodels`, and
+3. a production-like evaluator workflow with rolling retraining and sliding/expanding training windows.
 
 ## What this repository demonstrates
 
 - Merlion `TimeSeries` conversion from pandas data
 - Forecasting with multiple Merlion models
 - Anomaly detection with multiple Merlion detectors
-- Forecast evaluation with sMAPE
+- Forecast evaluation with sMAPE and RMSE
 - Anomaly evaluation with precision, recall, and F1
+- Merlion `ForecastEvaluator` for historical deployment simulation
+- Merlion `TSADEvaluator` for live-style anomaly detection simulation
+- Train-once, expanding-window, and sliding-window retraining policies
 - Model runtime measurement
 - Reproducible synthetic data generation
 - A real-data benchmark with no external data download
@@ -49,7 +53,8 @@ Because the macroeconomic dataset does not contain anomaly labels, anomaly detec
     ├── __init__.py
     ├── data.py
     ├── run_demo.py
-    └── benchmark.py
+    ├── benchmark.py
+    └── production_backtest.py
 ```
 
 ## Installation
@@ -92,6 +97,35 @@ It creates:
 
 The benchmark is fault-tolerant: if an optional model fails because of a platform-specific dependency, the remaining models still run and the failure is recorded in the `status` column.
 
+## Run the production-like backtest
+
+```bash
+python -m src.production_backtest
+```
+
+This workflow uses Merlion's evaluator layer rather than fitting a model once and forecasting the entire test set in one batch.
+
+Three deployment policies are compared:
+
+| Policy | Retraining | Training history |
+|---|---|---|
+| `train_once` | never | initial training set only |
+| `expanding_annual` | approximately yearly | all history available up to each retraining point |
+| `sliding_10y_annual` | approximately yearly | most recent 10 years only |
+
+For forecasting, the workflow uses `ForecastEvaluator` with ARIMA and a roughly one-quarter prediction horizon. The evaluator walks forward through the historical test period and retrains according to the selected policy.
+
+For anomaly detection, the workflow uses `TSADEvaluator` with Isolation Forest. Predictions are generated incrementally through the test period while the detector is periodically retrained according to the same deployment policies.
+
+It creates:
+
+- `artifacts/production_forecast_backtest.csv`
+- `artifacts/production_anomaly_backtest.csv`
+- `artifacts/production_forecast_backtest.png`
+- `artifacts/production_anomaly_backtest.png`
+
+The forecast table reports sMAPE, RMSE, runtime, retraining frequency, training-window policy, and execution status. The anomaly table reports precision, recall, F1, runtime, retraining frequency, training-window policy, and execution status.
+
 ## Benchmark methodology
 
 ### Forecasting
@@ -112,6 +146,21 @@ Each detector is trained on the same clean history and evaluated on the same con
 - runtime.
 
 Higher F1 is better.
+
+## Why rolling retraining matters
+
+A static holdout benchmark answers, "How well does this model work if trained once?" Production systems usually face a different question: "How well does this model work as new observations arrive and the model is periodically refreshed?"
+
+Merlion's evaluator framework simulates this historical deployment process. It can:
+
+- train an initial model,
+- walk forward through unseen observations,
+- generate predictions at a configured cadence,
+- periodically reset and retrain the model,
+- use either the full expanding history or a bounded sliding window,
+- evaluate the resulting sequence of predictions against ground truth.
+
+The `production_backtest.py` workflow makes the distinction between static benchmarking and deployment simulation explicit.
 
 ## Original synthetic workflow
 
