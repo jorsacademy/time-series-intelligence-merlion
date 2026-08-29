@@ -1,18 +1,42 @@
 # Time Series Intelligence with Merlion
 
-A compact, reproducible project demonstrating **forecasting**, **anomaly detection**, and **benchmark-style evaluation** with Salesforce's [Merlion](https://github.com/salesforce/Merlion) time-series library.
+A reproducible project demonstrating **forecasting**, **anomaly detection**, and **multi-model benchmarking** with Salesforce's [Merlion](https://github.com/salesforce/Merlion) time-series library.
 
-The project intentionally uses synthetic data so it can run end-to-end without downloading an external dataset. The generated series contains trend, seasonality, noise, and injected point anomalies.
+The repository now contains two workflows:
+
+1. a small synthetic end-to-end demo, and
+2. a benchmark using **real US macroeconomic data** packaged with `statsmodels`.
 
 ## What this repository demonstrates
 
 - Merlion `TimeSeries` conversion from pandas data
-- Forecasting with `DefaultForecaster`
-- Anomaly detection with `DefaultDetector`
+- Forecasting with multiple Merlion models
+- Anomaly detection with multiple Merlion detectors
 - Forecast evaluation with sMAPE
 - Anomaly evaluation with precision, recall, and F1
-- Reproducible synthetic time-series generation
-- PNG result plots and a CSV metrics summary
+- Model runtime measurement
+- Reproducible synthetic data generation
+- A real-data benchmark with no external data download
+- CSV benchmark tables and PNG comparison plots
+
+## Models benchmarked
+
+### Forecasting
+
+- `DefaultForecaster`
+- `ARIMA`
+- `ETS`
+- `Prophet`
+
+The forecasting benchmark uses quarterly US real GDP from `statsmodels.datasets.macrodata`.
+
+### Anomaly detection
+
+- `DefaultDetector`
+- `IsolationForest`
+- `StatThreshold`
+
+Because the macroeconomic dataset does not contain anomaly labels, anomaly detection is evaluated on **real GDP growth with controlled point anomalies injected only into the held-out test period**. This keeps the underlying signal real while providing known ground truth for precision, recall, and F1.
 
 ## Project structure
 
@@ -24,7 +48,8 @@ The project intentionally uses synthetic data so it can run end-to-end without d
 └── src
     ├── __init__.py
     ├── data.py
-    └── run_demo.py
+    ├── run_demo.py
+    └── benchmark.py
 ```
 
 ## Installation
@@ -38,61 +63,71 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Merlion is published on PyPI as `salesforce-merlion`.
+This project pins Merlion to `salesforce-merlion==2.0.2`, the latest upstream release published by Salesforce.
 
-## Run the demo
+## Run the synthetic demo
 
 ```bash
 python -m src.run_demo
 ```
 
-The script creates an `artifacts/` directory containing:
+It creates:
 
-- `forecast.png` — actual values vs. Merlion forecast
-- `anomaly_detection.png` — observed series with detected and true anomalies
-- `metrics.csv` — forecasting and anomaly-detection metrics
+- `artifacts/forecast.png`
+- `artifacts/anomaly_detection.png`
+- `artifacts/metrics.csv`
 
-## Method
+## Run the real-data benchmark
 
-### Synthetic signal
+```bash
+python -m src.benchmark
+```
 
-The signal combines:
+It creates:
 
-- linear trend,
-- daily and weekly seasonality,
-- Gaussian noise,
-- deterministic injected anomalies in the held-out period.
+- `artifacts/forecast_benchmark.csv` — forecasting model ranking by sMAPE
+- `artifacts/anomaly_benchmark.csv` — detector ranking by F1
+- `artifacts/forecast_benchmark.png` — actual GDP and model forecasts
+- `artifacts/anomaly_benchmark.png` — true and detected anomalies
 
-The first 70% of observations are used for model training and the remaining 30% for evaluation.
+The benchmark is fault-tolerant: if an optional model fails because of a platform-specific dependency, the remaining models still run and the failure is recorded in the `status` column.
+
+## Benchmark methodology
 
 ### Forecasting
 
-`DefaultForecaster` provides Merlion's practical default forecasting configuration. The model is trained on the clean training split and asked to forecast the timestamps in the test split.
+The quarterly real-GDP series is split chronologically: 80% training and 20% testing. Each forecasting model is fitted on the same training data and predicts exactly the same held-out timestamps.
 
-Forecast quality is summarized with **sMAPE** (symmetric mean absolute percentage error). Lower is better.
+The primary metric is **sMAPE** (symmetric mean absolute percentage error): lower values are better. Runtime in seconds is also recorded.
 
 ### Anomaly detection
 
-`DefaultDetector` is trained on the clean training split. It then produces anomaly labels for the held-out test series, which contains injected anomalies.
+Real GDP is converted to quarterly percentage growth. The first 80% is used as clean training history. Five deterministic high-magnitude point anomalies are then injected into the held-out 20% only.
 
-Detection quality is summarized with:
+Each detector is trained on the same clean history and evaluated on the same contaminated test period using:
 
-- Precision
-- Recall
-- F1 score
+- precision,
+- recall,
+- F1 score,
+- runtime.
+
+Higher F1 is better.
+
+## Original synthetic workflow
+
+The synthetic signal combines linear trend, daily and weekly seasonality, Gaussian noise, and deterministic injected anomalies. The first 70% is used for training and the remaining 30% for evaluation.
+
+`DefaultForecaster` produces the forecast and `DefaultDetector` produces anomaly labels. This workflow is intentionally small and useful for learning the Merlion API before moving to the benchmark.
 
 ## Why Merlion?
 
-Merlion provides a unified API for multiple time-series tasks, including forecasting, anomaly detection, change-point detection, model ensembles, AutoML-style model selection, evaluation pipelines, and distributed execution support.
+Merlion provides a unified interface for time-series forecasting, anomaly detection, change-point detection, ensembles, AutoML-style model selection, evaluation pipelines, visualization, and distributed execution.
 
-This repository focuses on the two most common entry points—forecasting and anomaly detection—while keeping the example small enough to inspect and modify.
-
-## Notes
-
-The upstream `salesforce/Merlion` repository is archived, but the package and source remain useful for learning and reproducible experiments. For production use, pin dependencies and validate the stack on the target Python/platform combination.
+The upstream `salesforce/Merlion` repository was archived in March 2026 and is read-only, so this repository is intended for learning, reproducible experiments, and comparative analysis rather than representing an actively maintained upstream stack.
 
 ## References
 
 - Merlion source: https://github.com/salesforce/Merlion
 - Merlion documentation: https://opensource.salesforce.com/Merlion/
-- Technical report: https://arxiv.org/abs/2109.09265
+- Merlion technical report: https://arxiv.org/abs/2109.09265
+- statsmodels macrodata dataset: https://www.statsmodels.org/stable/datasets/generated/macrodata.html
